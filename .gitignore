@@ -1,0 +1,20 @@
+# Compiled output
+build/
+
+# Gradle
+.gradle/
+
+# Claude
+.agents/
+.claude/
+
+# Minecraft dev runtime
+run/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Logs
+*.log

@@ -1,0 +1,15 @@
+[versions]
+minecraft = "1.21.11"
+yarn_mappings = "1.21.11+build.4"
+loader = "0.18.4"
+fabric_api = "0.141.3+1.21.11"
+loom = "1.13.3"
+java = "21"
+
+[libraries]
+minecraft = { module = "com.mojang:minecraft", version.ref = "minecraft" }
+fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "loader" }
+fabric-api = { module = "net.fabricmc.fabric-api:fabric-api", version.ref = "fabric_api" }
+
+[plugins]
+fabric-loom = { id = "fabric-loom", version.ref = "loom" }
