@@ -1,19 +1,21 @@
 package com.wynncompare.item;
 
 import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.CustomModelDataComponent;
 import net.minecraft.component.type.EquippableComponent;
 import net.minecraft.component.type.LoreComponent;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.BowItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.item.ShearsItem;
 import net.minecraft.text.Text;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Set;
 
 public class WynnItemParser {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("wynncompare");
 
     private static final Set<String> RARITY_MARKERS = Set.of(
             "Normal Item",
@@ -25,6 +27,10 @@ public class WynnItemParser {
             "Set Item"
     );
 
+    /**
+     * Parse a Wynncraft item type from an ItemStack.
+     * Uses CustomModelData (like Wynntils), equipment component, and lore patterns.
+     */
     public static WynnItemType parse(ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
             return null;
@@ -34,31 +40,48 @@ public class WynnItemParser {
             return null;
         }
 
-        // Layer 2: Equipment component for armor detection
-        WynnItemType equipType = fromEquipmentComponent(stack);
-        if (equipType != null) {
-            return equipType;
+        // Armor: detect via equipment component
+        EquippableComponent equippable = stack.get(DataComponentTypes.EQUIPPABLE);
+        if (equippable != null) {
+            WynnItemType equipType = switch (equippable.slot()) {
+                case HEAD -> WynnItemType.HELMET;
+                case CHEST -> WynnItemType.CHESTPLATE;
+                case LEGS -> WynnItemType.LEGGINGS;
+                case FEET -> WynnItemType.BOOTS;
+                default -> null;
+            };
+            if (equipType != null) {
+                return equipType;
+            }
         }
 
-        // Layer 2b: Vanilla base item mapping for weapons
-        WynnItemType vanillaType = fromVanillaItem(stack);
-        if (vanillaType != null) {
-            return vanillaType;
+        // Weapons: detect by vanilla base item (weapons use unique base items)
+        WynnItemType weaponType = fromWeaponBaseItem(stack);
+        if (weaponType != null) {
+            return weaponType;
         }
 
-        // Layer 3: Lore scanning for accessories
-        return fromLore(stack);
+        // For potion-based items: use lore to distinguish weapon vs accessory
+        if (stack.isOf(Items.POTION)) {
+            if (hasAttackSpeed(stack)) {
+                return WynnItemType.WEAPON;
+            }
+            // It's an accessory but we can't tell ring/bracelet/necklace from item data alone
+            return WynnItemType.ACCESSORY;
+        }
+
+        LOGGER.info("[WynnCompare] Wynn item not mapped to type, base item: {}", stack.getItem());
+        return null;
     }
 
-    private static boolean isWynnItem(ItemStack stack) {
+    public static boolean isWynnItem(ItemStack stack) {
         LoreComponent loreComponent = stack.get(DataComponentTypes.LORE);
         if (loreComponent == null) {
             return false;
         }
 
-        List<Text> lines = loreComponent.lines();
-        for (Text line : lines) {
-            String plainText = line.getString();
+        for (Text line : loreComponent.lines()) {
+            String plainText = stripSectionCodes(line.getString());
             for (String marker : RARITY_MARKERS) {
                 if (plainText.contains(marker)) {
                     return true;
@@ -68,46 +91,37 @@ public class WynnItemParser {
         return false;
     }
 
-    private static WynnItemType fromEquipmentComponent(ItemStack stack) {
-        EquippableComponent equippable = stack.get(DataComponentTypes.EQUIPPABLE);
-        if (equippable == null) {
-            return null;
-        }
-
-        return switch (equippable.slot()) {
-            case HEAD -> WynnItemType.HELMET;
-            case CHEST -> WynnItemType.CHESTPLATE;
-            case LEGS -> WynnItemType.LEGGINGS;
-            case FEET -> WynnItemType.BOOTS;
-            default -> null;
-        };
-    }
-
-    private static WynnItemType fromVanillaItem(ItemStack stack) {
-        // Weapon detection via known Wynncraft base items
+    /**
+     * Weapons that still use unique vanilla base items (crafted weapons).
+     */
+    private static WynnItemType fromWeaponBaseItem(ItemStack stack) {
         if (stack.isOf(Items.IRON_SHOVEL)) return WynnItemType.SPEAR;
         if (stack.isOf(Items.WOODEN_SHOVEL)) return WynnItemType.WAND;
         if (stack.isOf(Items.STONE_SHOVEL)) return WynnItemType.RELIK;
-        if (stack.getItem() instanceof ShearsItem) return WynnItemType.DAGGER;
-        if (stack.getItem() instanceof BowItem) return WynnItemType.BOW;
-
+        if (stack.isOf(Items.SHEARS)) return WynnItemType.DAGGER;
+        if (stack.isOf(Items.BOW)) return WynnItemType.BOW;
         return null;
     }
 
-    private static WynnItemType fromLore(ItemStack stack) {
+    /**
+     * Check if the item lore contains an "Attack Speed" line (weapon indicator).
+     */
+    private static boolean hasAttackSpeed(ItemStack stack) {
         LoreComponent loreComponent = stack.get(DataComponentTypes.LORE);
         if (loreComponent == null) {
-            return null;
+            return false;
         }
 
         for (Text line : loreComponent.lines()) {
-            String plainText = line.getString();
-            // Accessory type keywords typically appear in lore as type identifiers
-            if (plainText.contains("Ring")) return WynnItemType.RING;
-            if (plainText.contains("Bracelet")) return WynnItemType.BRACELET;
-            if (plainText.contains("Necklace")) return WynnItemType.NECKLACE;
+            String plainText = stripSectionCodes(line.getString());
+            if (plainText.contains("Attack Speed")) {
+                return true;
+            }
         }
+        return false;
+    }
 
-        return null;
+    private static String stripSectionCodes(String text) {
+        return text.replaceAll("§.", "");
     }
 }
