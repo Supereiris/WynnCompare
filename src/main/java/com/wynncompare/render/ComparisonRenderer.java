@@ -99,13 +99,16 @@ public class ComparisonRenderer {
             }
         }
 
-        int y = mouseY - 4;
+        // Match vanilla HoveredTooltipPositioner Y logic so both tooltips align
         int screenHeight = drawContext.getScaledWindowHeight();
-        if (y + tooltipHeight > screenHeight - 4) {
-            y = screenHeight - tooltipHeight - 4;
+        int hoveredHeight = computeHoveredTooltipHeight(client, hoveredStack);
+        int y = computeVanillaTooltipY(mouseY, hoveredHeight, screenHeight);
+        // Clamp the equipped tooltip using the same Y origin but its own height
+        if (y + tooltipHeight > screenHeight - 3) {
+            y = screenHeight - tooltipHeight - 3;
         }
-        if (y < 4) {
-            y = 4;
+        if (y < 3) {
+            y = 3;
         }
 
         // Render the tooltip immediately — afterRender is past drawDeferredElements(),
@@ -145,6 +148,30 @@ public class ComparisonRenderer {
             }
         }
         return height;
+    }
+
+    /**
+     * Replicates vanilla HoveredTooltipPositioner Y calculation so the equipped
+     * tooltip starts at the same vertical position as the hovered one.
+     */
+    private static int computeVanillaTooltipY(int mouseY, int tooltipHeight, int screenHeight) {
+        int y = mouseY - 12;
+        if (y + tooltipHeight + 3 > screenHeight) {
+            y = screenHeight - tooltipHeight - 3;
+        }
+        if (y < 3) {
+            y = 3;
+        }
+        return y;
+    }
+
+    private static int computeHoveredTooltipHeight(MinecraftClient client, ItemStack stack) {
+        List<Text> lines = stack.getTooltip(
+                Item.TooltipContext.create(client.world),
+                client.player,
+                TooltipType.ADVANCED
+        );
+        return computeTooltipHeight(client.textRenderer, lines);
     }
 
     private static int estimateHoveredTooltipWidth(MinecraftClient client, ItemStack stack) {
