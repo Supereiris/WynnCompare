@@ -29,7 +29,7 @@ public class ComparisonRenderer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("wynncompare");
     private static boolean loggedKeyOnce = false;
-    private static final int TOOLTIP_GAP = 4;
+    private static final int TOOLTIP_GAP = 8;
 
     public static void onScreenRender(HandledScreen<?> screen, DrawContext drawContext, int mouseX, int mouseY) {
         try {
@@ -60,19 +60,15 @@ public class ComparisonRenderer {
         }
 
         ItemStack hoveredStack = focusedSlot.getStack();
-        LOGGER.info("[WynnCompare] Hovering item: {}", hoveredStack.getName().getString());
 
         WynnItemType type = WynnItemParser.parse(hoveredStack);
         if (type == null) {
-            LOGGER.info("[WynnCompare] Item is not a recognized Wynn item");
             return;
         }
-        LOGGER.info("[WynnCompare] Detected Wynn item type: {}", type);
 
         List<ItemStack> equippedStacks = EquipmentResolver.findEquipped(
                 client.player, type, hoveredStack, screen.getScreenHandler());
         if (equippedStacks.isEmpty()) {
-            LOGGER.info("[WynnCompare] No equipped equivalent found for type {}", type);
             return;
         }
 
@@ -84,10 +80,11 @@ public class ComparisonRenderer {
         int hoveredHeight = computeHoveredTooltipHeight(client, hoveredStack);
         int baseY = computeVanillaTooltipY(mouseY, hoveredHeight, screenHeight);
 
-        int currentY = baseY;
+        // Build tooltip data for all equipped items
+        List<List<Text>> allTooltipLines = new ArrayList<>();
+        List<Integer> allWidths = new ArrayList<>();
         for (int i = 0; i < equippedStacks.size(); i++) {
             ItemStack equippedStack = equippedStacks.get(i);
-            LOGGER.info("[WynnCompare] Found equipped item {}: {}", i + 1, equippedStack.getName().getString());
 
             List<Text> tooltipLines = new ArrayList<>(equippedStack.getTooltip(
                     Item.TooltipContext.create(client.world),
@@ -100,20 +97,39 @@ public class ComparisonRenderer {
                     : "Equipped:";
             tooltipLines.addFirst(Text.literal(header).formatted(Formatting.GOLD, Formatting.BOLD));
 
-            int tooltipWidth = computeTooltipWidth(textRenderer, tooltipLines);
+            allTooltipLines.add(tooltipLines);
+            allWidths.add(computeTooltipWidth(textRenderer, tooltipLines));
+        }
+
+        // Total width of all equipped tooltips side by side
+        int totalEquippedWidth = 0;
+        for (int w : allWidths) {
+            totalEquippedWidth += w;
+        }
+        totalEquippedWidth += TOOLTIP_GAP * (allWidths.size() - 1);
+
+        int hoveredTooltipWidth = estimateHoveredTooltipWidth(client, hoveredStack);
+
+        // Position all equipped tooltips to the LEFT of the cursor
+        // Start X: try to fit all tooltips to the left of the hovered tooltip
+        int startX = mouseX - totalEquippedWidth - 16;
+        if (startX < 4) {
+            // Not enough space on the left, place to the right
+            startX = mouseX + 16 + hoveredTooltipWidth;
+            if (startX + totalEquippedWidth > screenWidth - 4) {
+                startX = mouseX + 16;
+            }
+        }
+
+        // Render each tooltip side by side horizontally
+        int currentX = startX;
+        for (int i = 0; i < allTooltipLines.size(); i++) {
+            List<Text> tooltipLines = allTooltipLines.get(i);
+            int tooltipWidth = allWidths.get(i);
             int tooltipHeight = computeTooltipHeight(textRenderer, tooltipLines);
 
-            // X positioning: try left of cursor, fall back to right
-            int x = mouseX - tooltipWidth - 16;
-            if (x < 4) {
-                x = mouseX + 16 + estimateHoveredTooltipWidth(client, hoveredStack);
-                if (x + tooltipWidth > screenWidth - 4) {
-                    x = mouseX + 16;
-                }
-            }
-
             // Clamp Y to screen
-            int y = currentY;
+            int y = baseY;
             if (y + tooltipHeight > screenHeight - 3) {
                 y = screenHeight - tooltipHeight - 3;
             }
@@ -125,13 +141,12 @@ public class ComparisonRenderer {
                     .map(Text::asOrderedText)
                     .map(TooltipComponent::of)
                     .toList();
-            final int finalX = x;
+            final int finalX = currentX;
             final int finalY = y;
             drawContext.drawTooltipImmediately(textRenderer, components, finalX, finalY,
                     (screenW, screenH, posX, posY, w, h) -> new Vector2i(finalX, finalY), null);
 
-            // Stack next tooltip below this one
-            currentY = y + tooltipHeight + TOOLTIP_GAP;
+            currentX += tooltipWidth + TOOLTIP_GAP;
         }
     }
 

@@ -27,9 +27,26 @@ public class WynnItemParser {
             "Set Item"
     );
 
+    // CustomModelData float ranges from Wynntils' model_data.json (cdn.wynntils.com)
+    private static final float RING_MIN = 1361f;
+    private static final float RING_MAX = 1377f;
+    private static final float BRACELET_MIN = 1378f;
+    private static final float BRACELET_MAX = 1391f;
+    private static final float NECKLACE_MIN = 1392f;
+    private static final float NECKLACE_MAX = 1408f;
+    private static final float BOW_MIN = 1409f;
+    private static final float BOW_MAX = 1502f;
+    private static final float DAGGER_MIN = 1503f;
+    private static final float DAGGER_MAX = 1599f;
+    private static final float WAND_MIN = 1600f;
+    private static final float WAND_MAX = 1695f;
+    private static final float RELIK_MIN = 1696f;
+    private static final float RELIK_MAX = 1789f;
+    private static final float SPEAR_MIN = 1790f;
+    private static final float SPEAR_MAX = 1884f;
+
     /**
      * Parse a Wynncraft item type from an ItemStack.
-     * Uses CustomModelData (like Wynntils), equipment component, and lore patterns.
      */
     public static WynnItemType parse(ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
@@ -55,22 +72,26 @@ public class WynnItemParser {
             }
         }
 
-        // Weapons: detect by vanilla base item (weapons use unique base items)
+        // CustomModelData-based detection (weapons and accessories)
+        WynnItemType cmdType = fromCustomModelData(stack);
+        if (cmdType != null) {
+            return cmdType;
+        }
+
+        // Fallback: crafted weapons use unique vanilla base items
         WynnItemType weaponType = fromWeaponBaseItem(stack);
         if (weaponType != null) {
             return weaponType;
         }
 
-        // For potion-based items: use lore to distinguish weapon vs accessory
+        // Fallback for potion items without CustomModelData
         if (stack.isOf(Items.POTION)) {
             if (hasAttackSpeed(stack)) {
                 return WynnItemType.WEAPON;
             }
-            // It's an accessory but we can't tell ring/bracelet/necklace from item data alone
             return WynnItemType.ACCESSORY;
         }
 
-        LOGGER.info("[WynnCompare] Wynn item not mapped to type, base item: {}", stack.getItem());
         return null;
     }
 
@@ -91,9 +112,35 @@ public class WynnItemParser {
         return false;
     }
 
-    /**
-     * Weapons that still use unique vanilla base items (crafted weapons).
-     */
+    private static WynnItemType fromCustomModelData(ItemStack stack) {
+        CustomModelDataComponent cmd = stack.get(DataComponentTypes.CUSTOM_MODEL_DATA);
+        if (cmd == null) {
+            return null;
+        }
+
+        List<Float> floats = cmd.floats();
+        if (floats.isEmpty()) {
+            return null;
+        }
+
+        for (float value : floats) {
+            if (inRange(value, RING_MIN, RING_MAX)) return WynnItemType.RING;
+            if (inRange(value, BRACELET_MIN, BRACELET_MAX)) return WynnItemType.BRACELET;
+            if (inRange(value, NECKLACE_MIN, NECKLACE_MAX)) return WynnItemType.NECKLACE;
+            if (inRange(value, BOW_MIN, BOW_MAX)) return WynnItemType.BOW;
+            if (inRange(value, DAGGER_MIN, DAGGER_MAX)) return WynnItemType.DAGGER;
+            if (inRange(value, WAND_MIN, WAND_MAX)) return WynnItemType.WAND;
+            if (inRange(value, RELIK_MIN, RELIK_MAX)) return WynnItemType.RELIK;
+            if (inRange(value, SPEAR_MIN, SPEAR_MAX)) return WynnItemType.SPEAR;
+        }
+
+        return null;
+    }
+
+    private static boolean inRange(float value, float min, float max) {
+        return value >= min && value <= max;
+    }
+
     private static WynnItemType fromWeaponBaseItem(ItemStack stack) {
         if (stack.isOf(Items.IRON_SHOVEL)) return WynnItemType.SPEAR;
         if (stack.isOf(Items.WOODEN_SHOVEL)) return WynnItemType.WAND;
@@ -103,9 +150,6 @@ public class WynnItemParser {
         return null;
     }
 
-    /**
-     * Check if the item lore contains an "Attack Speed" line (weapon indicator).
-     */
     private static boolean hasAttackSpeed(ItemStack stack) {
         LoreComponent loreComponent = stack.get(DataComponentTypes.LORE);
         if (loreComponent == null) {
