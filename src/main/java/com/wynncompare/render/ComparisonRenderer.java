@@ -125,8 +125,9 @@ public class ComparisonRenderer {
 
             List<Text> comparisonLines = new ArrayList<>();
             String equippedName = equippedStack.getName().getString();
-            comparisonLines.add(Text.literal("Comparing with").formatted(Formatting.GRAY));
+            comparisonLines.add(Text.literal("Comparing based on").formatted(Formatting.GRAY));
             comparisonLines.add(Text.literal(equippedName).formatted(Formatting.GOLD, Formatting.BOLD));
+            comparisonLines.add(Text.empty());
             comparisonLines.addAll(ComparisonBuilder.build(hoveredStats, equippedStats));
 
             allComparisonTooltipLines.add(comparisonLines);
@@ -156,7 +157,8 @@ public class ComparisonRenderer {
         }
 
         // Position comparison tooltips to the RIGHT of the hovered tooltip
-        int comparisonStartX = mouseX + 12 + hoveredTooltipWidth + TOOLTIP_GAP;
+        // +12 = vanilla cursor offset, +8 = tooltip border/padding, +TOOLTIP_GAP = spacing
+        int comparisonStartX = mouseX + 12 + hoveredTooltipWidth + 8 + TOOLTIP_GAP;
         if (comparisonStartX + totalComparisonWidth > screenWidth - 4) {
             // Try to fit by shifting left, but don't overlap hovered
             comparisonStartX = screenWidth - totalComparisonWidth - 4;

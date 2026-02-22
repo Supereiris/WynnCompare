@@ -3,6 +3,7 @@ package com.wynncompare.comparison;
 import com.wynncompare.comparison.LoreParser.StatGroup;
 import com.wynncompare.comparison.LoreParser.StatLine;
 import net.minecraft.text.MutableText;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -39,9 +40,7 @@ public class ComparisonBuilder {
     }
 
     private static List<Text> buildGroup(List<StatLine> hoveredLines, List<StatLine> equippedLines, StatGroup group) {
-        List<Text> result = new ArrayList<>();
-
-        // Collect hovered lines for this group
+        // Collect hovered and equipped lines for this group
         List<StatLine> hoveredGroup = new ArrayList<>();
         for (StatLine sl : hoveredLines) {
             if (sl.group() == group) {
@@ -49,7 +48,6 @@ public class ComparisonBuilder {
             }
         }
 
-        // Build label -> StatLine map for equipped lines in this group
         Map<String, StatLine> equippedMap = new LinkedHashMap<>();
         for (StatLine sl : equippedLines) {
             if (sl.group() == group) {
@@ -57,35 +55,116 @@ public class ComparisonBuilder {
             }
         }
 
-        // Process hovered stats
-        for (StatLine hovLine : hoveredGroup) {
-            StatLine eqLine = equippedMap.remove(hovLine.label());
-
-            if (hovLine.isTextOnly()) {
-                // Presence-only: show as-is, no diff
-                result.add(hovLine.originalText());
-            } else if (eqLine != null && !eqLine.isTextOnly()) {
-                // Both have numeric values — show diff
-                double diff = hovLine.value() - eqLine.value();
-                Text diffText = formatDiff(diff, hovLine.isPercent());
-                MutableText combined = hovLine.originalText().copy().append(Text.literal(" ")).append(diffText);
-                result.add(combined);
-            } else {
-                // Hovered-only or equipped is text-only — show as-is
-                result.add(hovLine.originalText());
-            }
+        if (group == StatGroup.AVERAGE_DAMAGE) {
+            return buildDamageGroup(hoveredGroup, equippedMap);
         }
 
-        // Append equipped-only stats as gray strikethrough (skip for requirements)
+        List<Text> result = new ArrayList<>();
+        processHoveredLines(hoveredGroup, equippedMap, result);
+
+        // Append equipped-only stats as dark gray plain text (skip for requirements)
         if (group != StatGroup.REQUIREMENT) {
-            for (StatLine eqOnly : equippedMap.values()) {
-                MutableText removed = eqOnly.originalText().copy()
-                        .formatted(Formatting.GRAY, Formatting.STRIKETHROUGH);
-                result.add(removed);
-            }
+            appendEquippedOnly(equippedMap, result);
         }
 
         return result;
+    }
+
+    private static List<Text> buildDamageGroup(List<StatLine> hoveredGroup, Map<String, StatLine> equippedMap) {
+        List<Text> result = new ArrayList<>();
+
+        // Split hovered into attack lines and DPS/average lines
+        List<StatLine> hoveredAttacks = new ArrayList<>();
+        List<StatLine> hoveredDps = new ArrayList<>();
+        for (StatLine sl : hoveredGroup) {
+            if (isDpsLine(sl)) {
+                hoveredDps.add(sl);
+            } else {
+                hoveredAttacks.add(sl);
+            }
+        }
+
+        // 1. Active attacks (hovered attack lines with diffs)
+        processHoveredLines(hoveredAttacks, equippedMap, result);
+
+        // 2. Average DPS lines
+        processHoveredLines(hoveredDps, equippedMap, result);
+
+        // 3. Inactive attacks (equipped-only as dark gray)
+        appendEquippedOnly(equippedMap, result);
+
+        return result;
+    }
+
+    private static boolean isDpsLine(StatLine sl) {
+        String label = sl.label();
+        return label.contains("DPS") || label.contains("Average");
+    }
+
+    private static void processHoveredLines(List<StatLine> hoveredLines, Map<String, StatLine> equippedMap, List<Text> result) {
+        for (StatLine hovLine : hoveredLines) {
+            StatLine eqLine = equippedMap.remove(hovLine.label());
+
+            if (hovLine.isTextOnly()) {
+                result.add(hovLine.originalText());
+            } else if (eqLine != null && !eqLine.isTextOnly()) {
+                if (hovLine.isRange() && eqLine.isRange()) {
+                    Text diffText = formatRangeDiff(
+                            hovLine.value() - eqLine.value(),
+                            hovLine.valueMax() - eqLine.valueMax());
+                    MutableText combined = hovLine.originalText().copy().append(Text.literal(" ")).append(diffText);
+                    result.add(combined);
+                } else {
+                    double diff = hovLine.value() - eqLine.value();
+                    Text diffText = formatDiff(diff, hovLine.isPercent());
+                    MutableText combined = hovLine.originalText().copy().append(Text.literal(" ")).append(diffText);
+                    result.add(combined);
+                }
+            } else {
+                result.add(hovLine.originalText());
+            }
+        }
+    }
+
+    private static void appendEquippedOnly(Map<String, StatLine> equippedMap, List<Text> result) {
+        for (StatLine eqOnly : equippedMap.values()) {
+            result.add(toDarkGray(eqOnly.originalText()));
+        }
+    }
+
+    private static MutableText toDarkGray(Text text) {
+        // Preserve font (for icons) but override color and strip formatting
+        Style darkStyle = text.getStyle()
+                .withColor(Formatting.DARK_GRAY)
+                .withBold(false)
+                .withItalic(false)
+                .withUnderline(false)
+                .withStrikethrough(false)
+                .withObfuscated(false);
+        MutableText result = text.copyContentOnly().setStyle(darkStyle);
+        for (Text sibling : text.getSiblings()) {
+            result.append(toDarkGray(sibling));
+        }
+        return result;
+    }
+
+    private static Text formatRangeDiff(double diffMin, double diffMax) {
+        String minStr = (diffMin >= 0 ? "+" : "") + formatNumber(diffMin);
+        String maxStr = (diffMax >= 0 ? "+" : "") + formatNumber(diffMax);
+        String text = "(" + minStr + ", " + maxStr + ")";
+
+        // Color based on overall: green if both >= 0 and at least one > 0, red if both <= 0 and at least one < 0
+        Formatting color;
+        if (diffMin >= 0 && diffMax >= 0 && (diffMin > 0 || diffMax > 0)) {
+            color = Formatting.GREEN;
+        } else if (diffMin <= 0 && diffMax <= 0 && (diffMin < 0 || diffMax < 0)) {
+            color = Formatting.RED;
+        } else if (diffMin == 0 && diffMax == 0) {
+            color = Formatting.GRAY;
+        } else {
+            color = Formatting.YELLOW;
+        }
+        return Text.literal(text).formatted(color);
     }
 
     private static Text formatDiff(double diff, boolean isPercent) {
