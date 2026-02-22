@@ -31,7 +31,33 @@ public class ComparisonRenderer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("wynncompare");
     private static boolean loggedKeyOnce = false;
+
+    // Gap between side-by-side tooltips
     private static final int TOOLTIP_GAP = 8;
+
+    // Tooltip frame padding (visible border around content), from TooltipBackgroundRenderer
+    private static final int FRAME_PADDING = 3;
+
+    // Gap after first tooltip line (header separator), from drawTooltipImmediately
+    private static final int HEADER_GAP = 2;
+
+    // Single-component height adjustment, from drawTooltipImmediately
+    private static final int SINGLE_LINE_ADJUST = -2;
+
+    // Height per tooltip line, from OrderedTextTooltipComponent.getHeight()
+    private static final int LINE_HEIGHT = 10;
+
+    // Content padding added to max text width for tooltip width
+    private static final int WIDTH_PADDING = 8;
+
+    // Minimum distance from screen edge
+    private static final int SCREEN_MARGIN = 4;
+
+    // Cursor offset for positioning tooltips left of cursor
+    private static final int CURSOR_OFFSET = 16;
+
+    // Vanilla vertical offset from mouse Y
+    private static final int VANILLA_Y_OFFSET = 12;
 
     public static void onScreenRender(HandledScreen<?> screen, DrawContext drawContext, int mouseX, int mouseY) {
         try {
@@ -78,6 +104,7 @@ public class ComparisonRenderer {
         }
 
         TextRenderer textRenderer = client.textRenderer;
+        int screenWidth = drawContext.getScaledWindowWidth();
         int screenHeight = drawContext.getScaledWindowHeight();
 
         // Compute Y to match vanilla hovered tooltip position
@@ -154,10 +181,13 @@ public class ComparisonRenderer {
         }
         totalWidth += TOOLTIP_GAP * (Math.max(allWidths.size() - 1, 0));
 
-        // Position tooltips to the LEFT of the cursor
-        int startX = mouseX - totalWidth - 16;
-        if (startX < 4) {
-            startX = 4;
+        // Position tooltips to the LEFT of the cursor, clamped to screen bounds
+        int startX = mouseX - totalWidth - CURSOR_OFFSET;
+        if (startX + totalWidth + FRAME_PADDING > screenWidth - SCREEN_MARGIN) {
+            startX = screenWidth - totalWidth - FRAME_PADDING - SCREEN_MARGIN;
+        }
+        if (startX < SCREEN_MARGIN + FRAME_PADDING) {
+            startX = SCREEN_MARGIN + FRAME_PADDING;
         }
 
         // Render all tooltips (left side)
@@ -172,14 +202,16 @@ public class ComparisonRenderer {
 
     private static void renderTooltip(DrawContext drawContext, TextRenderer textRenderer,
                                        List<Text> tooltipLines, int x, int baseY, int screenHeight) {
-        int tooltipHeight = computeTooltipHeight(textRenderer, tooltipLines);
+        // Compute the full visible height: content + frame padding on both sides + header gap
+        int contentHeight = computeContentHeight(tooltipLines);
+        int fullHeight = contentHeight + FRAME_PADDING * 2;
 
         int y = baseY;
-        if (y + tooltipHeight > screenHeight - 3) {
-            y = screenHeight - tooltipHeight - 3;
+        if (y + fullHeight > screenHeight - SCREEN_MARGIN) {
+            y = screenHeight - fullHeight - SCREEN_MARGIN;
         }
-        if (y < 3) {
-            y = 3;
+        if (y < SCREEN_MARGIN + FRAME_PADDING) {
+            y = SCREEN_MARGIN + FRAME_PADDING;
         }
 
         List<TooltipComponent> components = tooltipLines.stream()
@@ -210,27 +242,33 @@ public class ComparisonRenderer {
                 maxWidth = width;
             }
         }
-        return maxWidth + 8;
+        return maxWidth + WIDTH_PADDING;
     }
 
-    private static int computeTooltipHeight(TextRenderer textRenderer, List<Text> lines) {
-        int height = 8;
-        for (int i = 0; i < lines.size(); i++) {
-            height += textRenderer.fontHeight;
-            if (i == 0) {
-                height += 2;
-            }
+    /**
+     * Computes the content height as Minecraft's drawTooltipImmediately calculates it internally.
+     * Each line is LINE_HEIGHT (10px) from OrderedTextTooltipComponent.getHeight().
+     * Single-line tooltips get SINGLE_LINE_ADJUST (-2). Multi-line tooltips get
+     * HEADER_GAP (+2) after the first component during rendering.
+     */
+    private static int computeContentHeight(List<Text> lines) {
+        int height = lines.size() == 1 ? SINGLE_LINE_ADJUST : 0;
+        height += lines.size() * LINE_HEIGHT;
+        // drawTooltipImmediately adds HEADER_GAP after the first component during rendering,
+        // which extends the actual rendered area beyond the computed content height
+        if (lines.size() > 1) {
+            height += HEADER_GAP;
         }
         return height;
     }
 
     private static int computeVanillaTooltipY(int mouseY, int tooltipHeight, int screenHeight) {
-        int y = mouseY - 12;
-        if (y + tooltipHeight + 3 > screenHeight) {
-            y = screenHeight - tooltipHeight - 3;
+        int y = mouseY - VANILLA_Y_OFFSET;
+        if (y + tooltipHeight + FRAME_PADDING > screenHeight) {
+            y = screenHeight - tooltipHeight - FRAME_PADDING;
         }
-        if (y < 3) {
-            y = 3;
+        if (y < FRAME_PADDING) {
+            y = FRAME_PADDING;
         }
         return y;
     }
@@ -241,6 +279,7 @@ public class ComparisonRenderer {
                 client.player,
                 TooltipType.ADVANCED
         );
-        return computeTooltipHeight(client.textRenderer, lines);
+        int contentHeight = computeContentHeight(lines);
+        return contentHeight + FRAME_PADDING * 2;
     }
 }
