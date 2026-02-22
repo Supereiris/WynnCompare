@@ -17,7 +17,7 @@ public class WynnItemParser {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("wynncompare");
 
-    private static final Set<String> RARITY_MARKERS = Set.of(
+    public static final Set<String> RARITY_MARKERS = Set.of(
             "Normal Item",
             "Unique Item",
             "Rare Item",
