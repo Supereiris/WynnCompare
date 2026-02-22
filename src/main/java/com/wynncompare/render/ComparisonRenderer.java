@@ -47,7 +47,10 @@ public class ComparisonRenderer {
             return;
         }
 
-        if (!isCompareKeyHeld(client)) {
+        boolean showEquipped = isCompareKeyHeld(client);
+        boolean showCompare = isDetailCompareKeyHeld(client);
+
+        if (!showEquipped && !showCompare) {
             return;
         }
 
@@ -75,109 +78,93 @@ public class ComparisonRenderer {
         }
 
         TextRenderer textRenderer = client.textRenderer;
-        int screenWidth = drawContext.getScaledWindowWidth();
         int screenHeight = drawContext.getScaledWindowHeight();
 
         // Compute Y to match vanilla hovered tooltip position
         int hoveredHeight = computeHoveredTooltipHeight(client, hoveredStack);
         int baseY = computeVanillaTooltipY(mouseY, hoveredHeight, screenHeight);
 
-        // Get hovered item tooltip lines and parse lore
-        List<Text> hoveredTooltipLines = hoveredStack.getTooltip(
-                Item.TooltipContext.create(client.world),
-                client.player,
-                TooltipType.ADVANCED
-        );
-        List<LoreParser.StatLine> hoveredStats = LoreParser.parse(hoveredTooltipLines);
-
-        // Build tooltip data for all equipped items and comparison tooltips
-        List<List<Text>> allEquippedTooltipLines = new ArrayList<>();
-        List<Integer> allEquippedWidths = new ArrayList<>();
-        List<List<Text>> allComparisonTooltipLines = new ArrayList<>();
-        List<Integer> allComparisonWidths = new ArrayList<>();
-
-        for (int i = 0; i < equippedStacks.size(); i++) {
-            ItemStack equippedStack = equippedStacks.get(i);
-
-            // Equipped tooltip
-            List<Text> tooltipLines = new ArrayList<>(equippedStack.getTooltip(
+        // Get hovered item tooltip lines and parse lore (needed for comparison)
+        List<LoreParser.StatLine> hoveredStats = null;
+        if (showCompare) {
+            List<Text> hoveredTooltipLines = hoveredStack.getTooltip(
                     Item.TooltipContext.create(client.world),
                     client.player,
                     TooltipType.ADVANCED
-            ));
-
-            String header = equippedStacks.size() > 1
-                    ? "Equipped (" + (i + 1) + "/" + equippedStacks.size() + "):"
-                    : "Equipped:";
-            tooltipLines.addFirst(Text.literal(header).formatted(Formatting.GOLD, Formatting.BOLD));
-
-            allEquippedTooltipLines.add(tooltipLines);
-            allEquippedWidths.add(computeTooltipWidth(textRenderer, tooltipLines));
-
-            // Comparison tooltip
-            List<LoreParser.StatLine> equippedStats = LoreParser.parse(
-                    equippedStack.getTooltip(
-                            Item.TooltipContext.create(client.world),
-                            client.player,
-                            TooltipType.ADVANCED
-                    )
             );
-
-            List<Text> comparisonLines = new ArrayList<>();
-            String equippedName = equippedStack.getName().getString();
-            comparisonLines.add(Text.literal("Comparing based on").formatted(Formatting.GRAY));
-            comparisonLines.add(Text.literal(equippedName).formatted(Formatting.GOLD, Formatting.BOLD));
-            comparisonLines.add(Text.empty());
-            comparisonLines.addAll(ComparisonBuilder.build(hoveredStats, equippedStats));
-
-            allComparisonTooltipLines.add(comparisonLines);
-            allComparisonWidths.add(computeTooltipWidth(textRenderer, comparisonLines));
+            hoveredStats = LoreParser.parse(hoveredTooltipLines);
         }
 
-        // Total width of all equipped tooltips side by side
-        int totalEquippedWidth = 0;
-        for (int w : allEquippedWidths) {
-            totalEquippedWidth += w;
-        }
-        totalEquippedWidth += TOOLTIP_GAP * (Math.max(allEquippedWidths.size() - 1, 0));
+        // Build equipped tooltips (C key)
+        List<List<Text>> equippedTooltipLines = new ArrayList<>();
+        List<Integer> equippedWidths = new ArrayList<>();
+        if (showEquipped) {
+            for (int i = 0; i < equippedStacks.size(); i++) {
+                ItemStack equippedStack = equippedStacks.get(i);
+                List<Text> tooltipLines = new ArrayList<>(equippedStack.getTooltip(
+                        Item.TooltipContext.create(client.world),
+                        client.player,
+                        TooltipType.ADVANCED
+                ));
 
-        int hoveredTooltipWidth = computeTooltipWidth(textRenderer, hoveredTooltipLines);
+                String header = equippedStacks.size() > 1
+                        ? "Equipped (" + (i + 1) + "/" + equippedStacks.size() + "):"
+                        : "Equipped:";
+                tooltipLines.addFirst(Text.literal(header).formatted(Formatting.GOLD, Formatting.BOLD));
 
-        // Total width of all comparison tooltips side by side
-        int totalComparisonWidth = 0;
-        for (int w : allComparisonWidths) {
-            totalComparisonWidth += w;
-        }
-        totalComparisonWidth += TOOLTIP_GAP * (Math.max(allComparisonWidths.size() - 1, 0));
-
-        // Position equipped tooltips to the LEFT of the cursor
-        int equippedStartX = mouseX - totalEquippedWidth - 16;
-        if (equippedStartX < 4) {
-            equippedStartX = 4;
-        }
-
-        // Position comparison tooltips to the RIGHT of the hovered tooltip
-        // +12 = vanilla cursor offset, +8 = tooltip border/padding, +TOOLTIP_GAP = spacing
-        int comparisonStartX = mouseX + 12 + hoveredTooltipWidth + 8 + TOOLTIP_GAP;
-        if (comparisonStartX + totalComparisonWidth > screenWidth - 4) {
-            // Try to fit by shifting left, but don't overlap hovered
-            comparisonStartX = screenWidth - totalComparisonWidth - 4;
+                equippedTooltipLines.add(tooltipLines);
+                equippedWidths.add(computeTooltipWidth(textRenderer, tooltipLines));
+            }
         }
 
-        // Render equipped tooltips (left side)
-        int currentX = equippedStartX;
-        for (int i = 0; i < allEquippedTooltipLines.size(); i++) {
-            List<Text> tooltipLines = allEquippedTooltipLines.get(i);
-            int tooltipWidth = allEquippedWidths.get(i);
-            renderTooltip(drawContext, textRenderer, tooltipLines, currentX, baseY, screenHeight);
-            currentX += tooltipWidth + TOOLTIP_GAP;
+        // Build comparison tooltips (X key)
+        List<List<Text>> compareTooltipLines = new ArrayList<>();
+        List<Integer> compareWidths = new ArrayList<>();
+        if (showCompare) {
+            for (int i = 0; i < equippedStacks.size(); i++) {
+                ItemStack equippedStack = equippedStacks.get(i);
+                List<LoreParser.StatLine> equippedStats = LoreParser.parse(
+                        equippedStack.getTooltip(
+                                Item.TooltipContext.create(client.world),
+                                client.player,
+                                TooltipType.ADVANCED
+                        )
+                );
+
+                List<Text> comparisonLines = new ArrayList<>();
+                String equippedName = equippedStack.getName().getString();
+                comparisonLines.add(Text.literal("Comparing based on").formatted(Formatting.GRAY));
+                comparisonLines.add(Text.literal(equippedName).formatted(Formatting.GOLD, Formatting.BOLD));
+                comparisonLines.add(Text.empty());
+                comparisonLines.addAll(ComparisonBuilder.build(hoveredStats, equippedStats));
+
+                compareTooltipLines.add(comparisonLines);
+                compareWidths.add(computeTooltipWidth(textRenderer, comparisonLines));
+            }
         }
 
-        // Render comparison tooltips (right side)
-        currentX = comparisonStartX;
-        for (int i = 0; i < allComparisonTooltipLines.size(); i++) {
-            List<Text> tooltipLines = allComparisonTooltipLines.get(i);
-            int tooltipWidth = allComparisonWidths.get(i);
+        // Compare (X) takes priority over equipped (C) when both are held
+        List<List<Text>> allTooltipLines = showCompare ? compareTooltipLines : equippedTooltipLines;
+        List<Integer> allWidths = showCompare ? compareWidths : equippedWidths;
+
+        // Total width of all tooltips side by side
+        int totalWidth = 0;
+        for (int w : allWidths) {
+            totalWidth += w;
+        }
+        totalWidth += TOOLTIP_GAP * (Math.max(allWidths.size() - 1, 0));
+
+        // Position tooltips to the LEFT of the cursor
+        int startX = mouseX - totalWidth - 16;
+        if (startX < 4) {
+            startX = 4;
+        }
+
+        // Render all tooltips (left side)
+        int currentX = startX;
+        for (int i = 0; i < allTooltipLines.size(); i++) {
+            List<Text> tooltipLines = allTooltipLines.get(i);
+            int tooltipWidth = allWidths.get(i);
             renderTooltip(drawContext, textRenderer, tooltipLines, currentX, baseY, screenHeight);
             currentX += tooltipWidth + TOOLTIP_GAP;
         }
@@ -207,6 +194,11 @@ public class ComparisonRenderer {
 
     private static boolean isCompareKeyHeld(MinecraftClient client) {
         InputUtil.Key boundKey = ((KeyBindingAccessor) WynnCompareClient.compareKey).getBoundKey();
+        return InputUtil.isKeyPressed(client.getWindow(), boundKey.getCode());
+    }
+
+    private static boolean isDetailCompareKeyHeld(MinecraftClient client) {
+        InputUtil.Key boundKey = ((KeyBindingAccessor) WynnCompareClient.detailCompareKey).getBoundKey();
         return InputUtil.isKeyPressed(client.getWindow(), boundKey.getCode());
     }
 
