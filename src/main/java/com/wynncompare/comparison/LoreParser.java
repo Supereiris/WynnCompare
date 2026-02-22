@@ -19,11 +19,15 @@ public class LoreParser {
         SUFFIX, PREFIX_PCT, PREFIX_FLAT, TEXT_ONLY
     }
 
-    public record StatLine(String label, double value, boolean isPercent, boolean isStat,
-                           boolean isTextOnly, StatGroup group, Text originalText) {}
+    public record StatLine(String label, double value, double valueMax, boolean isPercent,
+                           boolean isRange, boolean isStat, boolean isTextOnly,
+                           StatGroup group, Text originalText) {}
 
     // Pattern A: "Label: +/-N" or "Label: N" (e.g., "Health: +251", "Water Defence: 80")
     private static final Pattern PATTERN_SUFFIX = Pattern.compile("^(.+?):\\s*([+-]?\\d+)\\s*$");
+
+    // Pattern A2: "Label: N-N" range (e.g., "Neutral Damage: 4-11")
+    private static final Pattern PATTERN_SUFFIX_RANGE = Pattern.compile("^(.+?):\\s*(\\d+)-(\\d+)\\s*$");
 
     // Pattern B: "+/-N% Label" or "+/-N%** Label" (e.g., "+24%** XP Bonus", "+12% Reflection")
     private static final Pattern PATTERN_PREFIX_PCT = Pattern.compile("^([+-]?\\d+)%(\\**)\\s+(.+)$");
@@ -71,14 +75,14 @@ public class LoreParser {
         // Check if it's a rarity marker line
         for (String marker : WynnItemParser.RARITY_MARKERS) {
             if (raw.contains(marker)) {
-                return new StatLine(raw, 0, false, false, false, StatGroup.NONE, originalText);
+                return nonStat(raw, originalText);
             }
         }
 
         // Check skip keywords — these are always NONE
         for (String keyword : SKIP_KEYWORDS) {
             if (raw.contains(keyword)) {
-                return new StatLine(raw, 0, false, false, false, StatGroup.NONE, originalText);
+                return nonStat(raw, originalText);
             }
         }
 
@@ -86,8 +90,7 @@ public class LoreParser {
         Matcher mRatio = PATTERN_PREFIX_RATIO.matcher(raw);
         if (mRatio.matches()) {
             String label = normalizeLabel(mRatio.group(2));
-            // Store 0 value — ratio stats are shown as-is (text-only) since diffing isn't meaningful
-            return new StatLine(label, 0, false, true, true, StatGroup.STAT, originalText);
+            return new StatLine(label, 0, 0, false, false, true, true, StatGroup.STAT, originalText);
         }
 
         // Try Pattern B: "+/-N% Label" or "+/-N%** Label"
@@ -96,7 +99,7 @@ public class LoreParser {
             double value = Double.parseDouble(mPct.group(1));
             String label = normalizeLabel(mPct.group(3));
             StatGroup group = classifyGroup(label, raw, PatternType.PREFIX_PCT);
-            return new StatLine(label, value, true, true, false, group, originalText);
+            return new StatLine(label, value, 0, true, false, true, false, group, originalText);
         }
 
         // Try Pattern C: "+/-N Label" (flat prefix)
@@ -105,7 +108,17 @@ public class LoreParser {
             double value = Double.parseDouble(mFlat.group(1));
             String label = normalizeLabel(mFlat.group(2));
             StatGroup group = classifyGroup(label, raw, PatternType.PREFIX_FLAT);
-            return new StatLine(label, value, false, true, false, group, originalText);
+            return new StatLine(label, value, 0, false, false, true, false, group, originalText);
+        }
+
+        // Try Pattern A2: "Label: N-N" range (before single-value suffix)
+        Matcher mRange = PATTERN_SUFFIX_RANGE.matcher(raw);
+        if (mRange.matches()) {
+            String label = normalizeLabel(mRange.group(1));
+            double min = Double.parseDouble(mRange.group(2));
+            double max = Double.parseDouble(mRange.group(3));
+            StatGroup group = classifyGroup(label, raw, PatternType.SUFFIX);
+            return new StatLine(label, min, max, false, true, true, false, group, originalText);
         }
 
         // Try Pattern A: "Label: +/-N"
@@ -114,7 +127,7 @@ public class LoreParser {
             String label = normalizeLabel(mSuffix.group(1));
             double value = Double.parseDouble(mSuffix.group(2));
             StatGroup group = classifyGroup(label, raw, PatternType.SUFFIX);
-            return new StatLine(label, value, false, true, false, group, originalText);
+            return new StatLine(label, value, 0, false, false, true, false, group, originalText);
         }
 
         // Try Pattern D: text-only lines like "Class Req: Assassin"
@@ -123,12 +136,16 @@ public class LoreParser {
             String label = normalizeLabel(mText.group(1));
             StatGroup group = classifyGroup(label, raw, PatternType.TEXT_ONLY);
             if (group != StatGroup.NONE) {
-                return new StatLine(label, 0, false, true, true, group, originalText);
+                return new StatLine(label, 0, 0, false, false, true, true, group, originalText);
             }
         }
 
         // Non-stat line
-        return new StatLine(raw, 0, false, false, false, StatGroup.NONE, originalText);
+        return nonStat(raw, originalText);
+    }
+
+    private static StatLine nonStat(String raw, Text originalText) {
+        return new StatLine(raw, 0, 0, false, false, false, false, StatGroup.NONE, originalText);
     }
 
     private static StatGroup classifyGroup(String label, String raw, PatternType pattern) {
@@ -144,7 +161,8 @@ public class LoreParser {
                 if (raw.contains("Defence")) {
                     return StatGroup.DEFENCE;
                 }
-                if (raw.contains("DPS") || raw.contains("Average")) {
+                if (raw.contains("Damage") || raw.contains("Attack")
+                        || raw.contains("DPS") || raw.contains("Average")) {
                     return StatGroup.AVERAGE_DAMAGE;
                 }
                 return StatGroup.STAT;
