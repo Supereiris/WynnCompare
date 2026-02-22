@@ -17,6 +17,7 @@ public class WynnCompareClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     public static KeyBinding compareKey;
+    public static KeyBinding detailCompareKey;
 
     @Override
     public void onInitializeClient() {
@@ -24,6 +25,13 @@ public class WynnCompareClient implements ClientModInitializer {
                 "key.wynncompare.compare",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_C,
+                KeyBinding.Category.MISC
+        ));
+
+        detailCompareKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.wynncompare.detail_compare",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_X,
                 KeyBinding.Category.MISC
         ));
 
