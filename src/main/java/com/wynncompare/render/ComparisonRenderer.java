@@ -1,6 +1,8 @@
 package com.wynncompare.render;
 
 import com.wynncompare.WynnCompareClient;
+import com.wynncompare.comparison.ComparisonBuilder;
+import com.wynncompare.comparison.LoreParser;
 import com.wynncompare.equipment.EquipmentResolver;
 import com.wynncompare.item.WynnItemParser;
 import com.wynncompare.item.WynnItemType;
@@ -80,12 +82,24 @@ public class ComparisonRenderer {
         int hoveredHeight = computeHoveredTooltipHeight(client, hoveredStack);
         int baseY = computeVanillaTooltipY(mouseY, hoveredHeight, screenHeight);
 
-        // Build tooltip data for all equipped items
-        List<List<Text>> allTooltipLines = new ArrayList<>();
-        List<Integer> allWidths = new ArrayList<>();
+        // Get hovered item tooltip lines and parse lore
+        List<Text> hoveredTooltipLines = hoveredStack.getTooltip(
+                Item.TooltipContext.create(client.world),
+                client.player,
+                TooltipType.ADVANCED
+        );
+        List<LoreParser.StatLine> hoveredStats = LoreParser.parse(hoveredTooltipLines);
+
+        // Build tooltip data for all equipped items and comparison tooltips
+        List<List<Text>> allEquippedTooltipLines = new ArrayList<>();
+        List<Integer> allEquippedWidths = new ArrayList<>();
+        List<List<Text>> allComparisonTooltipLines = new ArrayList<>();
+        List<Integer> allComparisonWidths = new ArrayList<>();
+
         for (int i = 0; i < equippedStacks.size(); i++) {
             ItemStack equippedStack = equippedStacks.get(i);
 
+            // Equipped tooltip
             List<Text> tooltipLines = new ArrayList<>(equippedStack.getTooltip(
                     Item.TooltipContext.create(client.world),
                     client.player,
@@ -97,57 +111,96 @@ public class ComparisonRenderer {
                     : "Equipped:";
             tooltipLines.addFirst(Text.literal(header).formatted(Formatting.GOLD, Formatting.BOLD));
 
-            allTooltipLines.add(tooltipLines);
-            allWidths.add(computeTooltipWidth(textRenderer, tooltipLines));
+            allEquippedTooltipLines.add(tooltipLines);
+            allEquippedWidths.add(computeTooltipWidth(textRenderer, tooltipLines));
+
+            // Comparison tooltip
+            List<LoreParser.StatLine> equippedStats = LoreParser.parse(
+                    equippedStack.getTooltip(
+                            Item.TooltipContext.create(client.world),
+                            client.player,
+                            TooltipType.ADVANCED
+                    )
+            );
+
+            List<Text> comparisonLines = new ArrayList<>();
+            String equippedName = equippedStack.getName().getString();
+            comparisonLines.add(Text.literal("Comparing with").formatted(Formatting.GRAY));
+            comparisonLines.add(Text.literal(equippedName).formatted(Formatting.GOLD, Formatting.BOLD));
+            comparisonLines.addAll(ComparisonBuilder.build(hoveredStats, equippedStats));
+
+            allComparisonTooltipLines.add(comparisonLines);
+            allComparisonWidths.add(computeTooltipWidth(textRenderer, comparisonLines));
         }
 
         // Total width of all equipped tooltips side by side
         int totalEquippedWidth = 0;
-        for (int w : allWidths) {
+        for (int w : allEquippedWidths) {
             totalEquippedWidth += w;
         }
-        totalEquippedWidth += TOOLTIP_GAP * (allWidths.size() - 1);
+        totalEquippedWidth += TOOLTIP_GAP * (Math.max(allEquippedWidths.size() - 1, 0));
 
-        int hoveredTooltipWidth = estimateHoveredTooltipWidth(client, hoveredStack);
+        int hoveredTooltipWidth = computeTooltipWidth(textRenderer, hoveredTooltipLines);
 
-        // Position all equipped tooltips to the LEFT of the cursor
-        // Start X: try to fit all tooltips to the left of the hovered tooltip
-        int startX = mouseX - totalEquippedWidth - 16;
-        if (startX < 4) {
-            // Not enough space on the left, place to the right
-            startX = mouseX + 16 + hoveredTooltipWidth;
-            if (startX + totalEquippedWidth > screenWidth - 4) {
-                startX = mouseX + 16;
-            }
+        // Total width of all comparison tooltips side by side
+        int totalComparisonWidth = 0;
+        for (int w : allComparisonWidths) {
+            totalComparisonWidth += w;
+        }
+        totalComparisonWidth += TOOLTIP_GAP * (Math.max(allComparisonWidths.size() - 1, 0));
+
+        // Position equipped tooltips to the LEFT of the cursor
+        int equippedStartX = mouseX - totalEquippedWidth - 16;
+        if (equippedStartX < 4) {
+            equippedStartX = 4;
         }
 
-        // Render each tooltip side by side horizontally
-        int currentX = startX;
-        for (int i = 0; i < allTooltipLines.size(); i++) {
-            List<Text> tooltipLines = allTooltipLines.get(i);
-            int tooltipWidth = allWidths.get(i);
-            int tooltipHeight = computeTooltipHeight(textRenderer, tooltipLines);
+        // Position comparison tooltips to the RIGHT of the hovered tooltip
+        int comparisonStartX = mouseX + 12 + hoveredTooltipWidth + TOOLTIP_GAP;
+        if (comparisonStartX + totalComparisonWidth > screenWidth - 4) {
+            // Try to fit by shifting left, but don't overlap hovered
+            comparisonStartX = screenWidth - totalComparisonWidth - 4;
+        }
 
-            // Clamp Y to screen
-            int y = baseY;
-            if (y + tooltipHeight > screenHeight - 3) {
-                y = screenHeight - tooltipHeight - 3;
-            }
-            if (y < 3) {
-                y = 3;
-            }
-
-            List<TooltipComponent> components = tooltipLines.stream()
-                    .map(Text::asOrderedText)
-                    .map(TooltipComponent::of)
-                    .toList();
-            final int finalX = currentX;
-            final int finalY = y;
-            drawContext.drawTooltipImmediately(textRenderer, components, finalX, finalY,
-                    (screenW, screenH, posX, posY, w, h) -> new Vector2i(finalX, finalY), null);
-
+        // Render equipped tooltips (left side)
+        int currentX = equippedStartX;
+        for (int i = 0; i < allEquippedTooltipLines.size(); i++) {
+            List<Text> tooltipLines = allEquippedTooltipLines.get(i);
+            int tooltipWidth = allEquippedWidths.get(i);
+            renderTooltip(drawContext, textRenderer, tooltipLines, currentX, baseY, screenHeight);
             currentX += tooltipWidth + TOOLTIP_GAP;
         }
+
+        // Render comparison tooltips (right side)
+        currentX = comparisonStartX;
+        for (int i = 0; i < allComparisonTooltipLines.size(); i++) {
+            List<Text> tooltipLines = allComparisonTooltipLines.get(i);
+            int tooltipWidth = allComparisonWidths.get(i);
+            renderTooltip(drawContext, textRenderer, tooltipLines, currentX, baseY, screenHeight);
+            currentX += tooltipWidth + TOOLTIP_GAP;
+        }
+    }
+
+    private static void renderTooltip(DrawContext drawContext, TextRenderer textRenderer,
+                                       List<Text> tooltipLines, int x, int baseY, int screenHeight) {
+        int tooltipHeight = computeTooltipHeight(textRenderer, tooltipLines);
+
+        int y = baseY;
+        if (y + tooltipHeight > screenHeight - 3) {
+            y = screenHeight - tooltipHeight - 3;
+        }
+        if (y < 3) {
+            y = 3;
+        }
+
+        List<TooltipComponent> components = tooltipLines.stream()
+                .map(Text::asOrderedText)
+                .map(TooltipComponent::of)
+                .toList();
+        final int finalX = x;
+        final int finalY = y;
+        drawContext.drawTooltipImmediately(textRenderer, components, finalX, finalY,
+                (screenW, screenH, posX, posY, w, h) -> new Vector2i(finalX, finalY), null);
     }
 
     private static boolean isCompareKeyHeld(MinecraftClient client) {
@@ -195,14 +248,5 @@ public class ComparisonRenderer {
                 TooltipType.ADVANCED
         );
         return computeTooltipHeight(client.textRenderer, lines);
-    }
-
-    private static int estimateHoveredTooltipWidth(MinecraftClient client, ItemStack stack) {
-        List<Text> hoveredLines = stack.getTooltip(
-                Item.TooltipContext.create(client.world),
-                client.player,
-                TooltipType.ADVANCED
-        );
-        return computeTooltipWidth(client.textRenderer, hoveredLines);
     }
 }
