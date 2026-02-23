@@ -4,7 +4,7 @@
   "version": "${version}",
   "name": "WynnCompare",
   "description": "Side-by-side tooltip comparison for Wynncraft equipment",
-  "authors": ["WynnCompare"],
+  "authors": ["Supereiris"],
   "contact": {},
   "license": "MIT",
   "environment": "client",
