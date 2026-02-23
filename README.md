@@ -1,6 +1,15 @@
 # WynnCompare
 
-A client-side Fabric mod for Minecraft 1.21.11 that adds side-by-side tooltip comparison for [Wynncraft](https://wynncraft.com/) equipment. Hold a key while hovering over an item to compare it with your currently equipped gear.
+A client-side Fabric mod for Minecraft 1.21.11 that adds equipment tooltip comparison for [Wynncraft](https://wynncraft.com/). Hold a key while hovering over an item to see your equipped gear or a stat-by-stat breakdown.
+
+## Features
+
+- **Equipped Tooltip (C)** — View your currently equipped item's tooltip alongside the hovered item
+- **Stat Comparison (X)** — See a stat-by-stat diff with color-coded improvements and downgrades
+- **Smart Positioning** — Tooltips stay within screen bounds
+- **Configurable Keybindings** — Rebind keys in Options > Controls under the **WynnCompare** category
+
+Supports all Wynncraft equipment: armor, weapons, and accessories.
 
 ## Requirements
 
@@ -26,7 +35,14 @@ The compiled JAR will be in `build/libs/`.
 
 ## Usage
 
-While in a Wynncraft inventory screen, hold the **C** key and hover over a piece of equipment to see a side-by-side comparison tooltip with your currently equipped item.
+While in a Wynncraft inventory screen:
+
+| Key | Action |
+|-----|--------|
+| Hold **C** | Show equipped item tooltip on the left |
+| Hold **X** | Show stat comparison on the left |
+
+When both keys are held, the comparison tooltip takes priority.
 
 ## License
 
