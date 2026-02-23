@@ -39,6 +39,9 @@ public class LoreParser {
     // Group 1 = signed numerator, group 2 = label
     private static final Pattern PATTERN_PREFIX_RATIO = Pattern.compile("^([+-]?\\d+)/\\d+s?\\*{0,3}\\s+(.+)$");
 
+    // Pattern F: "+/-N tier Label", optional stars (e.g., "+1 tier Attack Speed", "-2 tier** Attack Speed")
+    private static final Pattern PATTERN_PREFIX_TIER = Pattern.compile("^([+-]?\\d+)\\s+tier\\*{0,3}\\s+(.+)$");
+
     // Pattern D: Non-numeric text-only lines like "Class Req: Assassin" or "+AbilityName: description"
     private static final Pattern PATTERN_TEXT_ONLY = Pattern.compile("^(.+?):\\s*(.+)$");
 
@@ -87,6 +90,7 @@ public class LoreParser {
 
         // Check for attack speed line (e.g., "Super Fast Attack Speed")
         if (raw.contains("Attack Speed")) {
+            // Try absolute tier name (e.g., "Super Fast Attack Speed")
             for (String tier : ATTACK_SPEED_TIERS) {
                 if (raw.contains(tier)) {
                     int tierIndex = ATTACK_SPEED_TIERS.indexOf(tier);
@@ -94,7 +98,15 @@ public class LoreParser {
                             StatGroup.ATTACK_SPEED, originalText);
                 }
             }
-            return nonStat(raw, originalText);
+            // Fall through to general patterns (e.g., "+1 tier Attack Speed")
+        }
+
+        // Try Pattern F: "+/-N tier Label" (e.g., "+1 tier Attack Speed")
+        Matcher mTier = PATTERN_PREFIX_TIER.matcher(raw);
+        if (mTier.matches()) {
+            double value = Double.parseDouble(mTier.group(1));
+            String label = normalizeLabel(mTier.group(2));
+            return new StatLine(label, value, 0, false, false, true, false, StatGroup.STAT, originalText);
         }
 
         // Check skip keywords — these are always NONE
@@ -150,13 +162,32 @@ public class LoreParser {
             return new StatLine(label, value, 0, false, false, true, false, group, originalText);
         }
 
-        // Try Pattern D: text-only lines like "Class Req: Assassin"
+        // Try Pattern D: text-only lines like "Class Req: Assassin" or "+Ability: description"
         Matcher mText = PATTERN_TEXT_ONLY.matcher(raw);
         if (mText.matches()) {
             String label = normalizeLabel(mText.group(1));
             StatGroup group = classifyGroup(label, raw, PatternType.TEXT_ONLY);
             if (group != StatGroup.NONE) {
-                return new StatLine(label, 0, 0, false, false, true, true, group, originalText);
+                // For ability stats (+Name: description), store only "+Name" as display text
+                Text displayText = originalText;
+                if (raw.startsWith("+") && group == StatGroup.STAT) {
+                    displayText = Text.literal("+" + label).setStyle(originalText.getStyle());
+                }
+                return new StatLine(label, 0, 0, false, false, true, true, group, displayText);
+            }
+        }
+
+        // Ability lines: "+AbilityName" or "+AbilityName:" (description may be on next line or absent)
+        if (raw.startsWith("+")) {
+            String stripped = raw.startsWith("+") ? raw.substring(1) : raw;
+            // Remove trailing colon if present
+            if (stripped.endsWith(":")) {
+                stripped = stripped.substring(0, stripped.length() - 1);
+            }
+            String label = normalizeLabel(stripped.trim());
+            if (!label.isEmpty()) {
+                Text displayText = Text.literal("+" + label).setStyle(originalText.getStyle());
+                return new StatLine(label, 0, 0, false, false, true, true, StatGroup.STAT, displayText);
             }
         }
 
