@@ -51,8 +51,12 @@ public class ComparisonBuilder {
         Map<String, StatLine> equippedMap = new LinkedHashMap<>();
         for (StatLine sl : equippedLines) {
             if (sl.group() == group) {
-                equippedMap.put(sl.label(), sl);
+                equippedMap.put(statKey(sl), sl);
             }
+        }
+
+        if (group == StatGroup.ATTACK_SPEED) {
+            return buildAttackSpeedGroup(hoveredGroup, equippedMap);
         }
 
         if (group == StatGroup.AVERAGE_DAMAGE) {
@@ -66,6 +70,32 @@ public class ComparisonBuilder {
         if (group != StatGroup.REQUIREMENT) {
             appendEquippedOnly(equippedMap, result);
         }
+
+        return result;
+    }
+
+    private static List<Text> buildAttackSpeedGroup(List<StatLine> hoveredGroup, Map<String, StatLine> equippedMap) {
+        List<Text> result = new ArrayList<>();
+
+        for (StatLine hovLine : hoveredGroup) {
+            StatLine eqLine = equippedMap.remove(statKey(hovLine));
+
+            if (eqLine != null) {
+                // value stores the tier index (0=Super Slow, 6=Super Fast)
+                int diff = (int) (hovLine.value() - eqLine.value());
+                String diffStr = (diff >= 0 ? "(+" : "(") + diff + ")";
+                Formatting color = diff > 0 ? Formatting.GREEN : diff < 0 ? Formatting.RED : Formatting.GRAY;
+                MutableText combined = hovLine.originalText().copy()
+                        .append(Text.literal(" "))
+                        .append(Text.literal(diffStr).formatted(color));
+                result.add(combined);
+            } else {
+                result.add(hovLine.originalText());
+            }
+        }
+
+        // Equipped-only attack speed (item has attack speed but hovered doesn't)
+        appendEquippedOnly(equippedMap, result);
 
         return result;
     }
@@ -96,6 +126,14 @@ public class ComparisonBuilder {
         return result;
     }
 
+    /**
+     * Builds a unique key for stat matching. Stats with the same label but different
+     * value types (flat vs percent) are considered different stats.
+     */
+    private static String statKey(StatLine sl) {
+        return sl.label() + (sl.isPercent() ? "%" : "");
+    }
+
     private static boolean isDpsLine(StatLine sl) {
         String label = sl.label();
         return label.contains("DPS") || label.contains("Average");
@@ -103,7 +141,7 @@ public class ComparisonBuilder {
 
     private static void processHoveredLines(List<StatLine> hoveredLines, Map<String, StatLine> equippedMap, List<Text> result) {
         for (StatLine hovLine : hoveredLines) {
-            StatLine eqLine = equippedMap.remove(hovLine.label());
+            StatLine eqLine = equippedMap.remove(statKey(hovLine));
 
             if (hovLine.isTextOnly()) {
                 result.add(hovLine.originalText());
