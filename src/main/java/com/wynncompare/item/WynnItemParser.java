@@ -7,6 +7,7 @@ import net.minecraft.component.type.LoreComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,6 +26,11 @@ public class WynnItemParser {
             "Fabled Item",
             "Mythic Item",
             "Set Item"
+    );
+
+    // Tooltip style identifiers used by Wynncraft for item rarities
+    private static final Set<String> RARITY_STYLES = Set.of(
+            "normal", "unique", "rare", "legendary", "fabled", "mythic", "set"
     );
 
     // CustomModelData float ranges from Wynntils' model_data.json (cdn.wynntils.com)
@@ -96,19 +102,22 @@ public class WynnItemParser {
     }
 
     public static boolean isWynnItem(ItemStack stack) {
-        LoreComponent loreComponent = stack.get(DataComponentTypes.LORE);
-        if (loreComponent == null) {
-            return false;
+        // Primary: check tooltip_style component for Wynncraft rarity identifiers
+        Identifier tooltipStyle = stack.get(DataComponentTypes.TOOLTIP_STYLE);
+        if (tooltipStyle != null && RARITY_STYLES.contains(tooltipStyle.getPath())) {
+            return true;
         }
 
-        for (Text line : loreComponent.lines()) {
-            String plainText = stripSectionCodes(line.getString());
-            for (String marker : RARITY_MARKERS) {
-                if (plainText.contains(marker)) {
+        // Fallback: check custom_model_data strings for item_tier_* prefix
+        CustomModelDataComponent cmd = stack.get(DataComponentTypes.CUSTOM_MODEL_DATA);
+        if (cmd != null) {
+            for (String s : cmd.strings()) {
+                if (s.startsWith("item_tier_")) {
                     return true;
                 }
             }
         }
+
         return false;
     }
 
@@ -157,8 +166,8 @@ public class WynnItemParser {
         }
 
         for (Text line : loreComponent.lines()) {
-            String plainText = stripSectionCodes(line.getString());
-            if (plainText.contains("Attack Speed")) {
+            String plainText = line.getString();
+            if (plainText.contains("DPS") || plainText.contains("hits/s")) {
                 return true;
             }
         }
