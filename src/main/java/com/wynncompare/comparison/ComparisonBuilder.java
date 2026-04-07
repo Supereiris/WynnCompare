@@ -128,36 +128,62 @@ public class ComparisonBuilder {
 
     /**
      * Splits a multi-element line (defences/damage) at each attribute sprite icon,
-     * producing one fragment per element with its icon + spacing + value.
-     * Flattens the tree to leaf nodes first so nested structures are handled.
+     * producing one fragment per element with its icon + value.
+     * Collects original leaf Text nodes (preserving their styles) and groups by element.
+     * Each fragment is wrapped under the line's root style for correct inheritance.
      */
     private static List<MutableText> splitElementLine(Text line) {
-        // Flatten: collect all leaf Text nodes (nodes with actual content) in tree order
+        // Collect all leaf Text nodes in tree order
         List<Text> leaves = new ArrayList<>();
         collectLeaves(line, leaves);
 
-        // Split at attribute sprite leaves
-        List<MutableText> elements = new ArrayList<>();
-        MutableText current = null;
+        // Group leaves into per-element buckets, splitting at attribute sprites
+        List<List<Text>> groups = new ArrayList<>();
+        List<Text> currentGroup = null;
 
         for (Text leaf : leaves) {
             Identifier fontId = LoreParser.getFontId(leaf.getStyle().getFont());
+
+            // Skip decorative spacing segments (rectangles when isolated)
+            if (LoreParser.DECORATIVE_SEGMENT_FONTS.contains(fontId)
+                    && !fontId.equals(LoreParser.ATTRIBUTE_SPRITE_FONT)) {
+                continue;
+            }
+
             if (fontId.equals(LoreParser.ATTRIBUTE_SPRITE_FONT)) {
-                if (current != null) {
-                    elements.add(current);
+                if (currentGroup != null) {
+                    groups.add(currentGroup);
                 }
-                current = Text.empty().copy();
+                currentGroup = new ArrayList<>();
             }
-            if (current == null) {
-                current = Text.empty().copy();
+            if (currentGroup == null) {
+                currentGroup = new ArrayList<>();
             }
-            current.append(leaf.copyContentOnly().setStyle(leaf.getStyle()));
+            currentGroup.add(leaf);
         }
-        if (current != null && !elements.isEmpty()) {
-            elements.add(current);
-        } else if (current != null && elements.isEmpty() && leaves.stream().anyMatch(
-                l -> LoreParser.getFontId(l.getStyle().getFont()).equals(LoreParser.ATTRIBUTE_SPRITE_FONT))) {
-            elements.add(current);
+        if (currentGroup != null && (!groups.isEmpty() || !currentGroup.isEmpty())) {
+            groups.add(currentGroup);
+        }
+
+        // Build fragment Text for each group, using the line's root style as parent
+        Style rootStyle = line.getStyle();
+        List<MutableText> elements = new ArrayList<>();
+        for (List<Text> group : groups) {
+            MutableText fragment = Text.empty().setStyle(rootStyle);
+            for (Text leaf : group) {
+                Identifier fontId = LoreParser.getFontId(leaf.getStyle().getFont());
+                if (fontId.equals(LoreParser.ATTRIBUTE_SPRITE_FONT)) {
+                    // Keep sprite icons exactly as-is
+                    fragment.append(leaf.copy());
+                } else {
+                    // Strip PUA chars from value text but keep original style for inheritance
+                    String stripped = stripNonPrintable(leaf.copyContentOnly().getString());
+                    if (!stripped.isEmpty()) {
+                        fragment.append(Text.literal(stripped).setStyle(leaf.getStyle()));
+                    }
+                }
+            }
+            elements.add(fragment);
         }
 
         return elements;
@@ -450,5 +476,19 @@ public class ComparisonBuilder {
             return Long.toString((long) value);
         }
         return Double.toString(value);
+    }
+
+    private static String stripNonPrintable(String text) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            if (cp >= 0x20 && cp < 0xE000) {
+                sb.appendCodePoint(cp);
+            } else if (cp > 0xF8FF && cp < 0x10000) {
+                sb.appendCodePoint(cp);
+            }
+            i += Character.charCount(cp);
+        }
+        return sb.toString();
     }
 }
