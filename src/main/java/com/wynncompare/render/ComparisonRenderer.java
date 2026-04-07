@@ -112,9 +112,10 @@ public class ComparisonRenderer {
         int baseY = computeVanillaTooltipY(mouseY, hoveredHeight, screenHeight);
 
         // Get hovered item tooltip lines and parse lore (needed for comparison)
+        List<Text> hoveredTooltipLines = null;
         List<LoreParser.StatLine> hoveredStats = null;
         if (showCompare) {
-            List<Text> hoveredTooltipLines = hoveredStack.getTooltip(
+            hoveredTooltipLines = hoveredStack.getTooltip(
                     Item.TooltipContext.create(client.world),
                     client.player,
                     TooltipType.ADVANCED
@@ -159,11 +160,9 @@ public class ComparisonRenderer {
                 );
 
                 List<Text> comparisonLines = new ArrayList<>();
-                String equippedName = equippedStack.getName().getString();
-                comparisonLines.add(Text.literal("Comparing based on").formatted(Formatting.GRAY));
-                comparisonLines.add(Text.literal(equippedName).formatted(Formatting.GOLD, Formatting.BOLD));
-                comparisonLines.add(Text.empty());
-                comparisonLines.addAll(ComparisonBuilder.build(hoveredStats, equippedStats));
+                String equippedName = stripNonPrintable(equippedStack.getName().getString());
+                comparisonLines.add(Text.literal("vs " + equippedName).formatted(Formatting.GOLD));
+                comparisonLines.addAll(ComparisonBuilder.buildStyled(hoveredTooltipLines, hoveredStats, equippedStats));
 
                 compareTooltipLines.add(comparisonLines);
                 compareWidths.add(computeTooltipWidth(textRenderer, comparisonLines));
@@ -271,6 +270,20 @@ public class ComparisonRenderer {
             y = FRAME_PADDING;
         }
         return y;
+    }
+
+    private static String stripNonPrintable(String text) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            if (cp >= 0x20 && cp < 0xE000) {
+                sb.appendCodePoint(cp);
+            } else if (cp > 0xF8FF && cp < 0x10000) {
+                sb.appendCodePoint(cp);
+            }
+            i += Character.charCount(cp);
+        }
+        return sb.toString().trim();
     }
 
     private static int computeHoveredTooltipHeight(MinecraftClient client, ItemStack stack) {
