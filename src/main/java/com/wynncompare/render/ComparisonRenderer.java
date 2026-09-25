@@ -98,7 +98,7 @@ public class ComparisonRenderer {
         }
 
         List<ItemStack> equippedStacks = EquipmentResolver.findEquipped(
-                client.player, type, hoveredStack, screen.getScreenHandler());
+                client.player, type, hoveredStack);
         if (equippedStacks.isEmpty()) {
             return;
         }

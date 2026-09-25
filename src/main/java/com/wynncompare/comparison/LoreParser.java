@@ -3,13 +3,10 @@ package com.wynncompare.comparison;
 import net.minecraft.text.StyleSpriteSource;
 import net.minecraft.text.Text;
 import net.minecraft.text.TextColor;
-import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
-import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,16 +22,6 @@ public class LoreParser {
                            StatGroup group, Text originalText) {}
 
     private record Segment(String content, TextColor color, Identifier font) {}
-
-    // Header/footer fonts — lines with these are skipped in styled comparison output
-    private static final Set<Identifier> HEADER_FOOTER_FONTS = Set.of(
-            Identifier.of("minecraft", "tooltip/banner"),
-            Identifier.of("minecraft", "banner/box"),
-            Identifier.of("minecraft", "tooltip/emblem/frame"),
-            Identifier.of("minecraft", "tooltip/emblem/sprite"),
-            Identifier.of("minecraft", "tooltip/page"),
-            Identifier.of("minecraft", "chat/tile")
-    );
 
     // Fonts that indicate a purely decorative/structural line (skip entire line)
     private static final Set<Identifier> LINE_SKIP_FONTS = Set.of(
@@ -82,6 +69,9 @@ public class LoreParser {
     // Unsigned number (for zero defences etc.)
     private static final Pattern UNSIGNED_NUMBER = Pattern.compile("^\\d[\\d,]*$");
 
+    // Finds a signed value embedded after text (e.g. "Spell Damage+20%" after PUA stripping)
+    private static final Pattern EMBEDDED_SIGNED_VALUE = Pattern.compile("([+-][\\d,]+(/\\d+s?|%)?)$");
+
     // DPS extraction from a single segment like "56 DPS"
     private static final Pattern DPS_IN_SEGMENT = Pattern.compile("([\\d,]+)\\s*DPS");
 
@@ -91,46 +81,6 @@ public class LoreParser {
             result.addAll(parseLine(line));
         }
         return result;
-    }
-
-    /**
-     * Parse stats and build a map from original Text line reference to its parsed StatLines.
-     * Uses identity equality so the same Text object can be looked up later.
-     */
-    public static List<StatLine> parseWithLineMap(List<Text> lines, Map<Text, List<StatLine>> lineMap) {
-        List<StatLine> result = new ArrayList<>();
-        for (Text line : lines) {
-            List<StatLine> parsed = parseLine(line);
-            if (!parsed.isEmpty()) {
-                lineMap.put(line, parsed);
-            }
-            result.addAll(parsed);
-        }
-        return result;
-    }
-
-    /**
-     * Returns true if the line is a header/footer decorative line that should be
-     * skipped in the styled comparison tooltip (banners, emblems, page markers).
-     */
-    public static boolean isSkippedLine(Text line) {
-        return containsAnyFont(line, HEADER_FOOTER_FONTS);
-    }
-
-    /**
-     * Returns true if the line contains a divider font segment.
-     */
-    public static boolean isDividerLine(Text line) {
-        return containsAnyFont(line, Set.of(Identifier.of("minecraft", "tooltip/divider")));
-    }
-
-    private static boolean containsAnyFont(Text text, Set<Identifier> fonts) {
-        Identifier fontId = getFontId(text.getStyle().getFont());
-        if (fonts.contains(fontId)) return true;
-        for (Text sibling : text.getSiblings()) {
-            if (containsAnyFont(sibling, fonts)) return true;
-        }
-        return false;
     }
 
     private static List<StatLine> parseLine(Text line) {
@@ -360,8 +310,10 @@ public class LoreParser {
     }
 
     // Stat/attribute values: signed value pattern (+N, +N%, +N/Ns)
-    // Handles both "Label +N" and "+N Label" orderings
+    // Handles both "Label +N" and "+N Label" orderings,
+    // and merged segments like "Label+N%" where PUA separators were stripped
     private static List<StatLine> tryParseStatValue(List<Segment> content, Text line) {
+        // First pass: look for a segment that is exactly a signed value
         for (int i = 0; i < content.size(); i++) {
             Matcher m = SIGNED_VALUE.matcher(content.get(i).content());
             if (m.matches()) {
@@ -385,6 +337,33 @@ public class LoreParser {
                         group, line));
             }
         }
+
+        // Second pass: look for a signed value embedded at the end of a segment
+        // (e.g. "Combat Experience+4%" after PUA separator stripping)
+        for (int i = 0; i < content.size(); i++) {
+            Matcher em = EMBEDDED_SIGNED_VALUE.matcher(content.get(i).content());
+            if (em.find() && em.start() > 0) {
+                String labelPart = content.get(i).content().substring(0, em.start()).trim();
+                Matcher vm = SIGNED_VALUE.matcher(em.group(1));
+                if (!vm.matches()) continue;
+
+                double value = parseNumber(vm.group(1));
+                boolean isPercent = "%".equals(vm.group(2));
+
+                // Combine label from preceding segments + this segment's label part
+                String preceding = collectLabel(content, 0, i);
+                String label = preceding.isEmpty() ? labelPart
+                        : labelPart.isEmpty() ? preceding
+                        : preceding + " " + labelPart;
+
+                if (label.isEmpty() || !containsLetter(label)) continue;
+
+                StatGroup group = classifyByLabel(label);
+                return List.of(new StatLine(label, value, 0, isPercent, false, true, false,
+                        group, line));
+            }
+        }
+
         return null;
     }
 
