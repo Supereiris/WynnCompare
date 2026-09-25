@@ -7,43 +7,17 @@ import net.minecraft.component.type.LoreComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.text.Text;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import net.minecraft.util.Identifier;
 
 import java.util.List;
 import java.util.Set;
 
 public class WynnItemParser {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("wynncompare");
-
-    public static final Set<String> RARITY_MARKERS = Set.of(
-            "Normal Item",
-            "Unique Item",
-            "Rare Item",
-            "Legendary Item",
-            "Fabled Item",
-            "Mythic Item",
-            "Set Item"
+    // Tooltip style identifiers used by Wynncraft for item rarities
+    private static final Set<String> RARITY_STYLES = Set.of(
+            "normal", "unique", "rare", "legendary", "fabled", "mythic", "set"
     );
-
-    // CustomModelData float ranges from Wynntils' model_data.json (cdn.wynntils.com)
-    private static final float RING_MIN = 1361f;
-    private static final float RING_MAX = 1377f;
-    private static final float BRACELET_MIN = 1378f;
-    private static final float BRACELET_MAX = 1391f;
-    private static final float NECKLACE_MIN = 1392f;
-    private static final float NECKLACE_MAX = 1408f;
-    private static final float BOW_MIN = 1409f;
-    private static final float BOW_MAX = 1502f;
-    private static final float DAGGER_MIN = 1503f;
-    private static final float DAGGER_MAX = 1599f;
-    private static final float WAND_MIN = 1600f;
-    private static final float WAND_MAX = 1695f;
-    private static final float RELIK_MIN = 1696f;
-    private static final float RELIK_MAX = 1789f;
-    private static final float SPEAR_MIN = 1790f;
-    private static final float SPEAR_MAX = 1884f;
 
     /**
      * Parse a Wynncraft item type from an ItemStack.
@@ -96,19 +70,22 @@ public class WynnItemParser {
     }
 
     public static boolean isWynnItem(ItemStack stack) {
-        LoreComponent loreComponent = stack.get(DataComponentTypes.LORE);
-        if (loreComponent == null) {
-            return false;
+        // Primary: check tooltip_style component for Wynncraft rarity identifiers
+        Identifier tooltipStyle = stack.get(DataComponentTypes.TOOLTIP_STYLE);
+        if (tooltipStyle != null && RARITY_STYLES.contains(tooltipStyle.getPath())) {
+            return true;
         }
 
-        for (Text line : loreComponent.lines()) {
-            String plainText = stripSectionCodes(line.getString());
-            for (String marker : RARITY_MARKERS) {
-                if (plainText.contains(marker)) {
+        // Fallback: check custom_model_data strings for item_tier_* prefix
+        CustomModelDataComponent cmd = stack.get(DataComponentTypes.CUSTOM_MODEL_DATA);
+        if (cmd != null) {
+            for (String s : cmd.strings()) {
+                if (s.startsWith("item_tier_")) {
                     return true;
                 }
             }
         }
+
         return false;
     }
 
@@ -124,21 +101,11 @@ public class WynnItemParser {
         }
 
         for (float value : floats) {
-            if (inRange(value, RING_MIN, RING_MAX)) return WynnItemType.RING;
-            if (inRange(value, BRACELET_MIN, BRACELET_MAX)) return WynnItemType.BRACELET;
-            if (inRange(value, NECKLACE_MIN, NECKLACE_MAX)) return WynnItemType.NECKLACE;
-            if (inRange(value, BOW_MIN, BOW_MAX)) return WynnItemType.BOW;
-            if (inRange(value, DAGGER_MIN, DAGGER_MAX)) return WynnItemType.DAGGER;
-            if (inRange(value, WAND_MIN, WAND_MAX)) return WynnItemType.WAND;
-            if (inRange(value, RELIK_MIN, RELIK_MAX)) return WynnItemType.RELIK;
-            if (inRange(value, SPEAR_MIN, SPEAR_MAX)) return WynnItemType.SPEAR;
+            WynnItemType type = ModelDataRanges.typeOf(value);
+            if (type != null) return type;
         }
 
         return null;
-    }
-
-    private static boolean inRange(float value, float min, float max) {
-        return value >= min && value <= max;
     }
 
     private static WynnItemType fromWeaponBaseItem(ItemStack stack) {
@@ -157,15 +124,11 @@ public class WynnItemParser {
         }
 
         for (Text line : loreComponent.lines()) {
-            String plainText = stripSectionCodes(line.getString());
-            if (plainText.contains("Attack Speed")) {
+            String plainText = line.getString();
+            if (plainText.contains("DPS") || plainText.contains("hits/s")) {
                 return true;
             }
         }
         return false;
-    }
-
-    private static String stripSectionCodes(String text) {
-        return text.replaceAll("§.", "");
     }
 }
