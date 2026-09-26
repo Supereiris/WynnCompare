@@ -5,8 +5,13 @@
   "name": "WynnCompare",
   "description": "Side-by-side tooltip comparison for Wynncraft equipment",
   "authors": ["Supereiris"],
-  "contact": {},
+  "contact": {
+    "homepage": "https://github.com/Supereiris/WynnCompare",
+    "sources": "https://github.com/Supereiris/WynnCompare",
+    "issues": "https://github.com/Supereiris/WynnCompare/issues"
+  },
   "license": "MIT",
+  "icon": "assets/wynncompare/icon.png",
   "environment": "client",
   "entrypoints": {
     "client": ["com.wynncompare.WynnCompareClient"]

@@ -3,7 +3,7 @@ plugins {
     java
 }
 
-version = "2.0"
+version = "2.1+${libs.versions.minecraft.get()}"
 group = "com.wynncompare"
 
 base {
